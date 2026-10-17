@@ -51,12 +51,12 @@ def test_invalid_lines_return_422_and_block_analysis() -> None:
 
 def test_upload_accepts_requirements_txt_and_rejects_other_names() -> None:
     good = client.post(
-        "/api/v1/requirements/parse-file",
+        "/api/v1/requirements/parse",
         data={"python_version": "3.12"},
         files={"file": ("requirements.txt", io.BytesIO(b"requests==2.32.4\n"), "text/plain")},
     )
     bad = client.post(
-        "/api/v1/requirements/parse-file",
+        "/api/v1/requirements/parse",
         data={"python_version": "3.12"},
         files={"file": ("deps.txt", io.BytesIO(b"requests\n"), "text/plain")},
     )
@@ -70,11 +70,11 @@ def test_upload_accepts_requirements_txt_and_rejects_other_names() -> None:
 def test_file_upload_enforces_size_limit(monkeypatch) -> None:
     monkeypatch.setattr("app.api.routes.requirements.settings", replace(settings, max_requirements_bytes=4))
     response = client.post(
-        "/api/v1/requirements/parse-file",
+        "/api/v1/requirements/parse",
         data={"python_version": "3.12"},
         files={"file": ("requirements.txt", io.BytesIO(b"requests\n"), "text/plain")},
     )
-    assert response.status_code == 422
+    assert response.status_code == 413
     assert response.json()["error"]["code"] == "REQUIREMENTS_TOO_LARGE"
 
 

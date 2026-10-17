@@ -35,7 +35,7 @@ class RequirementsInputError(ValueError):
 
 def validate_python_version(value: str) -> str:
     normalized = value.strip()
-    if not _PYTHON_TARGET.fullmatch(normalized):
+    if not _PYTHON_TARGET.fullmatch(normalized) or not normalized.startswith("3."):
         raise RequirementsInputError(
             "INVALID_PYTHON_VERSION",
             "Choose a Python version such as 3.12.",
@@ -65,10 +65,10 @@ def parse_requirements(text: str) -> ParseResult:
         stripped = original.strip().removeprefix("\ufeff")
         if not stripped or stripped.startswith("#"):
             continue
-        line_content = re.sub(r"\s+#.*$", "", stripped).rstrip()
-        if not line_content:
+        if re.search(r"\s--(?:hash|global-option|install-option)(?:=|\s)", stripped):
+            issues.append(ParseIssue(line_number, original, "Per-requirement installation options such as --hash are not supported in this MVP."))
             continue
-        if line_content.startswith(("-", "\\")) or line_content.startswith(("git+", "hg+", "svn+", "bzr+")):
+        if stripped.startswith(("-", "\\")) or stripped.startswith(("git+", "hg+", "svn+", "bzr+")):
             issues.append(ParseIssue(
                 line_number,
                 original,
@@ -76,10 +76,18 @@ def parse_requirements(text: str) -> ParseResult:
             ))
             continue
         try:
-            requirement = Requirement(line_content)
+            requirement = Requirement(stripped)
         except InvalidRequirement as exc:
-            issues.append(ParseIssue(line_number, original, f"This line is not a supported PEP 508 requirement: {exc}"))
-            continue
+            line_content = re.sub(r"\s+#.*$", "", stripped).rstrip()
+            if line_content and line_content != stripped:
+                try:
+                    requirement = Requirement(line_content)
+                except InvalidRequirement:
+                    issues.append(ParseIssue(line_number, original, f"This line is not a supported PEP 508 requirement: {exc}"))
+                    continue
+            else:
+                issues.append(ParseIssue(line_number, original, f"This line is not a supported PEP 508 requirement: {exc}"))
+                continue
         if requirement.url:
             issues.append(ParseIssue(
                 line_number,

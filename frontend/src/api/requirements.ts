@@ -26,7 +26,7 @@ export async function parseRequirementsFile(file: File, pythonVersion: string): 
   const form = new FormData();
   form.set("file", file, file.name);
   form.set("python_version", pythonVersion);
-  return parseResponse(await fetch(`${apiBaseUrl}/api/v1/requirements/parse-file`, {
+  return parseResponse(await fetch(`${apiBaseUrl}/api/v1/requirements/parse`, {
     method: "POST",
     headers: { Accept: "application/json" },
     body: form,

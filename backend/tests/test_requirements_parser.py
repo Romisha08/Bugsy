@@ -48,6 +48,12 @@ def test_bom_is_accepted_without_changing_source_hash() -> None:
     assert result.requirements[0]["name"] == "requests"
 
 
+def test_hash_character_inside_a_valid_marker_is_not_treated_as_comment() -> None:
+    result = parse_requirements('demo; sys_platform == "linux # test"\n')
+    assert result.issues == ()
+    assert "# test" in result.requirements[0]["marker"]
+
+
 def test_blank_or_comment_only_input_is_rejected() -> None:
     with pytest.raises(RequirementsInputError, match="at least one"):
         parse_requirements("# no packages yet\n\n")
@@ -63,3 +69,10 @@ def test_input_line_and_size_limits_are_enforced(monkeypatch) -> None:
     monkeypatch.setattr(requirements_parser, "settings", replace(requirements_parser.settings, max_requirements_bytes=65536, max_requirements_lines=1))
     with pytest.raises(RequirementsInputError, match="line limit"):
         parse_requirements("requests>=2\n# more lines\n")
+
+
+def test_non_python_three_target_is_rejected():
+    from app.services.requirements_parser import validate_python_version
+
+    with pytest.raises(RequirementsInputError, match="Choose a Python version"):
+        validate_python_version("2.7")
