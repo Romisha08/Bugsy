@@ -1,0 +1,19 @@
+﻿.env
+.env.*
+!.env.example
+/devpost/learner-profile.md
+
+# Project-specific development environments and generated files
+.venv/
+backend/.venv/
+backend/.uv-cache/
+backend/.uv-python/
+backend/*.egg-info/
+frontend/node_modules/
+frontend/dist/
+frontend/*.tsbuildinfo
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.vite/
