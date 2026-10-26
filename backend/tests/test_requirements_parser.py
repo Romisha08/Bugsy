@@ -74,5 +74,20 @@ def test_input_line_and_size_limits_are_enforced(monkeypatch) -> None:
 def test_non_python_three_target_is_rejected():
     from app.services.requirements_parser import validate_python_version
 
-    with pytest.raises(RequirementsInputError, match="Choose a Python version"):
+    with pytest.raises(RequirementsInputError, match="Choose Python"):
         validate_python_version("2.7")
+
+
+@pytest.mark.parametrize("target", ["3.10", "3.11", "3.12", "3.13", "3.14"])
+def test_supported_python_targets_are_accepted(target):
+    from app.services.requirements_parser import RequirementsInputError, validate_python_version
+
+    assert validate_python_version(target) == target
+
+
+@pytest.mark.parametrize("target", ["3.9", "3.15", "3.12.14", "4.0"])
+def test_unsupported_python_targets_are_rejected(target):
+    from app.services.requirements_parser import RequirementsInputError, validate_python_version
+
+    with pytest.raises(RequirementsInputError):
+        validate_python_version(target)

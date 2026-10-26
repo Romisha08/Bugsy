@@ -35,11 +35,17 @@ class RequirementsInputError(ValueError):
 
 def validate_python_version(value: str) -> str:
     normalized = value.strip()
-    if not _PYTHON_TARGET.fullmatch(normalized) or not normalized.startswith("3."):
+    if not _PYTHON_TARGET.fullmatch(normalized):
         raise RequirementsInputError(
             "INVALID_PYTHON_VERSION",
-            "Choose a Python version such as 3.12.",
-            [{"field": "python_version", "reason": "Use major.minor or major.minor.patch format."}],
+            "Choose Python 3.10, 3.11, 3.12, 3.13, or 3.14.",
+            [{"field": "python_version", "reason": "Choose one of the supported major.minor versions."}],
+        )
+    if normalized not in {"3.10", "3.11", "3.12", "3.13", "3.14"}:
+        raise RequirementsInputError(
+            "UNSUPPORTED_PYTHON_VERSION",
+            "Choose Python 3.10, 3.11, 3.12, 3.13, or 3.14.",
+            [{"field": "python_version", "reason": "Only Python 3.10 through 3.14 are supported."}],
         )
     return normalized
 

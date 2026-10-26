@@ -3,13 +3,23 @@ from __future__ import annotations
 from urllib.parse import quote
 
 import httpx
-from packaging.specifiers import SpecifierSet
+from packaging.specifiers import InvalidSpecifier, SpecifierSet
 from packaging.utils import canonicalize_name
 from packaging.version import InvalidVersion, Version
 
-from app.schemas.analysis import MetadataResult
+from app.schemas.analysis import MetadataResult, ReleaseCandidate, ReleaseCandidateSet
 
 PYPI_JSON_ROOT = "https://pypi.org/pypi"
+PYPI_REQUEST_TIMEOUT_SECONDS = 8.0
+PYPI_CONNECT_TIMEOUT_SECONDS = 3.0
+
+
+def _get_with_single_timeout_retry(client: httpx.Client, url: str) -> httpx.Response:
+    """Retry one idempotent PyPI GET once, and only when the first attempt times out."""
+    try:
+        return client.get(url)
+    except httpx.TimeoutException:
+        return client.get(url)
 
 
 def _candidate_version(project: dict, specifier_text: str) -> str | None:
@@ -37,10 +47,10 @@ def _candidate_version(project: dict, specifier_text: str) -> str | None:
 def fetch_package_metadata(name: str, specifier_text: str) -> MetadataResult:
     project_name = canonicalize_name(name)
     project_url = f"{PYPI_JSON_ROOT}/{quote(project_name, safe='')}/json"
-    timeout = httpx.Timeout(8.0, connect=3.0)
+    timeout = httpx.Timeout(PYPI_REQUEST_TIMEOUT_SECONDS, connect=PYPI_CONNECT_TIMEOUT_SECONDS)
     try:
         with httpx.Client(timeout=timeout, follow_redirects=True, headers={"Accept": "application/json"}) as client:
-            project_response = client.get(project_url)
+            project_response = _get_with_single_timeout_retry(client, project_url)
             if project_response.status_code == 404:
                 return MetadataResult(
                     package=project_name,
@@ -56,7 +66,7 @@ def fetch_package_metadata(name: str, specifier_text: str) -> MetadataResult:
             latest = latest_info.get("version")
             if selected:
                 release_url = f"{PYPI_JSON_ROOT}/{quote(project_name, safe='')}/{quote(selected, safe='')}/json"
-                release_response = client.get(release_url)
+                release_response = _get_with_single_timeout_retry(client, release_url)
                 if release_response.status_code == 404:
                     raise httpx.HTTPStatusError("The selected PyPI release metadata was not found.", request=release_response.request, response=release_response)
                 release_response.raise_for_status()
@@ -89,13 +99,21 @@ def fetch_package_metadata(name: str, specifier_text: str) -> MetadataResult:
             error_code="PYPI_HTTP_ERROR",
             error_message=f"PyPI returned HTTP {status} while metadata was retrieved.",
         )
-    except (httpx.TimeoutException, httpx.NetworkError):
+    except httpx.TimeoutException:
+        return MetadataResult(
+            package=project_name,
+            status="error",
+            source_url=project_url,
+            error_code="PYPI_TIMEOUT",
+            error_message="The PyPI metadata request exceeded Bugsy's configured request timeout.",
+        )
+    except httpx.NetworkError:
         return MetadataResult(
             package=project_name,
             status="error",
             source_url=project_url,
             error_code="PYPI_UNAVAILABLE",
-            error_message="PyPI could not be reached before the metadata request timed out.",
+            error_message="Bugsy could not communicate with PyPI because a network error interrupted the request.",
         )
     except (ValueError, TypeError, KeyError):
         return MetadataResult(
@@ -105,3 +123,62 @@ def fetch_package_metadata(name: str, specifier_text: str) -> MetadataResult:
             error_code="INVALID_PYPI_RESPONSE",
             error_message="PyPI returned metadata that Bugsy could not interpret.",
         )
+
+
+def fetch_release_candidates(name: str, python_target: str, limit: int = 3) -> ReleaseCandidateSet:
+    """Return a small list of stable PyPI releases whose metadata supports the target Python."""
+    project_name = canonicalize_name(name)
+    project_url = f"{PYPI_JSON_ROOT}/{quote(project_name, safe='')}/json"
+    timeout = httpx.Timeout(PYPI_REQUEST_TIMEOUT_SECONDS, connect=PYPI_CONNECT_TIMEOUT_SECONDS)
+    if not 1 <= limit <= 3:
+        raise ValueError("Candidate limit must be between one and three.")
+    try:
+        with httpx.Client(timeout=timeout, follow_redirects=True, headers={"Accept": "application/json"}) as client:
+            response = _get_with_single_timeout_retry(client, project_url)
+            if response.status_code == 404:
+                return ReleaseCandidateSet(package=project_name, status="unavailable", error_code="PACKAGE_NOT_FOUND")
+            response.raise_for_status()
+            project = response.json()
+            versions: list[Version] = []
+            for raw in (project.get("releases") or {}):
+                try:
+                    version = Version(raw)
+                except InvalidVersion:
+                    continue
+                if not version.is_prerelease and not version.is_devrelease:
+                    versions.append(version)
+            candidates: list[ReleaseCandidate] = []
+            for version in sorted(versions, reverse=True):
+                version_text = str(version)
+                release_url = f"{PYPI_JSON_ROOT}/{quote(project_name, safe='')}/{quote(version_text, safe='')}/json"
+                release_response = _get_with_single_timeout_retry(client, release_url)
+                if release_response.status_code == 404:
+                    continue
+                release_response.raise_for_status()
+                info = (release_response.json().get("info") or {})
+                requires_python = info.get("requires_python")
+                if requires_python:
+                    try:
+                        if Version(python_target) not in SpecifierSet(requires_python):
+                            continue
+                    except (InvalidSpecifier, InvalidVersion):
+                        continue
+                candidates.append(ReleaseCandidate(
+                    candidate_id="", package=project_name, version=version_text,
+                    source_url=release_url, requires_python=requires_python,
+                    requires_dist=info.get("requires_dist") or [],
+                    yanked=any(bool(item.get("yanked")) for item in (project.get("releases") or {}).get(version_text, [])),
+                ))
+                if len(candidates) >= limit:
+                    break
+            if not candidates:
+                return ReleaseCandidateSet(package=project_name, status="unavailable", error_code="NO_PYTHON_COMPATIBLE_RELEASES")
+            return ReleaseCandidateSet(package=project_name, status="available", candidates=candidates)
+    except httpx.HTTPStatusError as exc:
+        return ReleaseCandidateSet(package=project_name, status="error", error_code=f"PYPI_HTTP_{exc.response.status_code}")
+    except httpx.TimeoutException:
+        return ReleaseCandidateSet(package=project_name, status="error", error_code="PYPI_TIMEOUT")
+    except httpx.NetworkError:
+        return ReleaseCandidateSet(package=project_name, status="error", error_code="PYPI_UNAVAILABLE")
+    except (ValueError, TypeError, KeyError):
+        return ReleaseCandidateSet(package=project_name, status="error", error_code="INVALID_PYPI_RESPONSE")

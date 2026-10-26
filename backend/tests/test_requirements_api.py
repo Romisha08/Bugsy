@@ -7,16 +7,21 @@ from fastapi.testclient import TestClient
 from app.main import app
 from app.config import settings
 from app.adapters.stub import StubResolverAdapter
-from app.schemas.analysis import MetadataResult
+from app.schemas.analysis import ExplanationResult, MetadataResult
 from app.services.workflow import clear_workflow_state
 
 client = TestClient(app)
 
 
 @pytest.fixture(autouse=True)
-def reset_state(monkeypatch):
+def reset_state(monkeypatch, tmp_path):
+    monkeypatch.setattr("app.services.workflow.DB_PATH", tmp_path / "bugsy.sqlite3")
     clear_workflow_state()
     monkeypatch.setattr("app.adapters.contree.settings", replace(settings, sandbox_enabled=False))
+    monkeypatch.setattr(
+        "app.api.routes.analyses.explain_report",
+        lambda _report: ExplanationResult(status="unavailable", error_code="TOKEN_FACTORY_DISABLED"),
+    )
     yield
     clear_workflow_state()
 
@@ -47,6 +52,24 @@ def test_invalid_lines_return_422_and_block_analysis() -> None:
     assert body["details"][0]["line"] == 2
     assert body["details"][0]["original"] == "-c constraints.txt"
     assert client.post("/api/v1/analyses", json={"source_id": "not-created"}).status_code == 404
+
+
+@pytest.mark.parametrize("version", ["3.10", "3.11", "3.12", "3.13", "3.14"])
+def test_supported_python_targets_are_accepted_by_parse_api(version):
+    response = client.post("/api/v1/requirements/parse", json={
+        "text": "idna==3.10\n", "python_version": version,
+    })
+    assert response.status_code == 200
+    assert response.json()["python_version"] == version
+
+
+def test_unsupported_python_target_is_rejected_before_source_creation():
+    response = client.post("/api/v1/requirements/parse", json={
+        "text": "idna==3.10\n", "python_version": "3.9",
+    })
+
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "UNSUPPORTED_PYTHON_VERSION"
 
 
 def test_upload_accepts_requirements_txt_and_rejects_other_names() -> None:

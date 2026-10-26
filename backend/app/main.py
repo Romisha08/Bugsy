@@ -5,6 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.routes.analyses import router as analyses_router
 from app.api.routes.requirements import router as requirements_router
+from app.api.routes.verifications import router as verifications_router
 from app.config import settings
 
 app = FastAPI(title="Bugsy API", version="0.1.0")
@@ -18,6 +19,7 @@ app.add_middleware(
 
 app.include_router(requirements_router, prefix="/api/v1")
 app.include_router(analyses_router, prefix="/api/v1")
+app.include_router(verifications_router, prefix="/api/v1")
 
 
 @app.get("/health", tags=["health"])

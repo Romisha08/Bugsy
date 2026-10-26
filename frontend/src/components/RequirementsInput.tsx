@@ -10,6 +10,7 @@ type Props = {
 };
 
 const pythonVersions = ["3.10", "3.11", "3.12", "3.13", "3.14"];
+const supportedPythonVersions = new Set(pythonVersions);
 
 export function RequirementsInput({ onParsed, onParseError, onSourceChange, busy }: Props) {
   const [localBusy, setLocalBusy] = useState(false);
@@ -56,7 +57,9 @@ export function RequirementsInput({ onParsed, onParseError, onSourceChange, busy
         <label className="python-select">
           <span>Python target</span>
           <select value={pythonVersion} onChange={(event) => { setPythonVersion(event.target.value); onSourceChange(); }}>
-            {pythonVersions.map((version) => <option key={version} value={version}>{version}</option>)}
+            {pythonVersions.map((version) => <option key={version} value={version} disabled={!supportedPythonVersions.has(version)}>
+              {supportedPythonVersions.has(version) ? version : `${version} (unsupported in this release)`}
+            </option>)}
           </select>
         </label>
       </div>
@@ -79,7 +82,7 @@ export function RequirementsInput({ onParsed, onParseError, onSourceChange, busy
       {file && <button type="button" className="text-button" onClick={() => { setFile(null); onSourceChange(); }}>Clear selected file to paste instead</button>}
 
       <div className="input-actions">
-        <p>Bugsy parses first. Unsupported lines stop analysis and show where to fix the source.</p>
+        <p>Bugsy parses first. Unsupported lines stop analysis and show where to fix the source. Sandbox image availability is unverified until the actual runtime is reported.</p>
         <button type="button" className="primary-button" disabled={busy || localBusy || (!file && !text.trim())} onClick={() => void parse()}>
           {busy || localBusy ? "Parsing…" : "Parse requirements"}<span aria-hidden="true">→</span>
         </button>

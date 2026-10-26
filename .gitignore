@@ -8,6 +8,7 @@
 backend/.venv/
 backend/.uv-cache/
 backend/.uv-python/
+/backend/data/
 backend/*.egg-info/
 frontend/node_modules/
 frontend/dist/
@@ -17,3 +18,12 @@ __pycache__/
 .pytest_cache/
 .ruff_cache/
 .vite/
+# Local data, logs, and private keys
+*.db
+*.sqlite
+*.sqlite3
+*.log
+*.pem
+*.key
+*.p12
+*.pfx
