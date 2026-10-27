@@ -6,6 +6,7 @@ import os
 from dataclasses import dataclass, field
 from pathlib import Path
 import re
+from urllib.parse import urlsplit
 
 from dotenv import load_dotenv
 
@@ -49,6 +50,47 @@ def _database_path() -> Path:
     return PROJECT_ROOT / "backend" / "data" / "bugsy.sqlite3"
 
 
+def parse_cors_origins(value: str | None) -> tuple[str, ...]:
+    """Parse a comma-separated allowlist of HTTP(S) origins safely.
+
+    Whitespace and an optional trailing slash are normalized. Entries with a
+    path, credentials, query, fragment, invalid port, or non-HTTP scheme are
+    discarded instead of broadening the allowlist.
+    """
+    origins: list[str] = []
+    for raw_origin in (value or "").split(","):
+        candidate = raw_origin.strip()
+        if not candidate or any(character.isspace() for character in candidate):
+            continue
+        try:
+            parsed = urlsplit(candidate)
+            port = parsed.port  # Access validates malformed/out-of-range ports.
+        except ValueError:
+            continue
+        if (
+            parsed.scheme.lower() not in {"http", "https"}
+            or not parsed.netloc
+            or parsed.hostname is None
+            or parsed.username is not None
+            or parsed.password is not None
+            or parsed.path not in {"", "/"}
+            or parsed.query
+            or parsed.fragment
+        ):
+            continue
+        # Normalize only scheme/host casing and the optional slash; retain a
+        # valid explicit port exactly as parsed.
+        host = parsed.hostname.lower()
+        if ":" in host and not host.startswith("["):
+            host = f"[{host}]"
+        normalized = f"{parsed.scheme.lower()}://{host}"
+        if port is not None:
+            normalized += f":{port}"
+        if normalized not in origins:
+            origins.append(normalized)
+    return tuple(origins)
+
+
 @dataclass(frozen=True)
 class Settings:
     """Values read by the API without exposing secrets to the browser."""
@@ -70,11 +112,9 @@ class Settings:
     )
     token_factory_timeout_seconds: float = 25.0
     token_factory_enabled: bool = _read_bool("TOKEN_FACTORY_ENABLED", False)
-    cors_origins: tuple[str, ...] = tuple(
-        origin.strip()
-        for origin in os.getenv("CORS_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173").split(",")
-        if origin.strip()
-    )
+    cors_origins: tuple[str, ...] = field(default_factory=lambda: parse_cors_origins(
+        os.getenv("CORS_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173")
+    ))
     database_path: Path = field(default_factory=_database_path)
 
 
