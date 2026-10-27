@@ -6,6 +6,7 @@ import os
 from dataclasses import dataclass, field
 from pathlib import Path
 import re
+import tempfile
 from urllib.parse import urlsplit
 
 from dotenv import load_dotenv
@@ -47,7 +48,7 @@ def _database_path() -> Path:
     configured = os.getenv("BUGSY_DATABASE_PATH")
     if configured and configured.strip():
         return Path(configured.strip()).expanduser()
-    return PROJECT_ROOT / "backend" / "data" / "bugsy.sqlite3"
+    return Path(tempfile.gettempdir()) / "bugsy.sqlite3"
 
 
 def parse_cors_origins(value: str | None) -> tuple[str, ...]:

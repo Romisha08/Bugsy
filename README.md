@@ -54,13 +54,15 @@ Add these non-secret environment settings in the backend service:
 
 ```text
 CORS_ORIGINS=https://<your-static-site>.onrender.com
-BUGSY_DATABASE_PATH=/var/data/bugsy.sqlite3
+# Optional: omit BUGSY_DATABASE_PATH on Render Free to use /tmp/bugsy.sqlite3.
+# For a paid service with a persistent disk mounted at /var/data, set:
+# BUGSY_DATABASE_PATH=/var/data/bugsy.sqlite3
 SANDBOX_ENABLED=false
 TOKEN_FACTORY_ENABLED=false
 SANDBOX_RETAIN_INSTALLATION_ARTIFACT=false
 ```
 
-Attach a persistent disk to the backend and mount it at `/var/data`. Bugsy now uses `BUGSY_DATABASE_PATH`; if unset, local development continues to use `backend/data/bugsy.sqlite3`. SQLite on a Render disk is a single-instance setup. The disk requires a paid web service, causes downtime during deploys, and cannot be shared across multiple service instances. Do not scale this backend horizontally while it uses SQLite on a disk.
+On Render Free, leave `BUGSY_DATABASE_PATH` unset. Bugsy stores SQLite at `/tmp/bugsy.sqlite3`, which is writable but ephemeral: records can be lost when the instance restarts or redeploys. For durable data, attach a persistent disk to an eligible paid backend service, mount it at `/var/data`, and set `BUGSY_DATABASE_PATH=/var/data/bugsy.sqlite3`. SQLite on a Render disk is a single-instance setup, can cause downtime during deploys, and cannot be shared across multiple service instances. Do not scale this backend horizontally while it uses SQLite on a disk.
 
 Only if you separately choose to enable a real integration, add the required backend-only credentials/settings in Render's Environment page: `NEBIUS_API_KEY`, `CONTREE_BASE_URL`, and `CONTREE_PROJECT_ID` for ConTree; `NEBIUS_BASE_URL` and `NEBIUS_MODEL_ID` are optional Token Factory overrides. Keep the two feature flags off until you are ready for those external calls and their possible usage costs. Configure secret values in Render's dashboard, never in source files or frontend variables.
 
@@ -86,7 +88,7 @@ Create a Static Site from the same repository:
 5. Keep Sandbox, Token Factory, and artifact retention disabled until credentials, access, costs, and a controlled live integration result have been reviewed.
 6. Test the local/public UI only against workflows whose dependencies are enabled. With Sandbox disabled, compatibility resolution and repair resolution cannot be demonstrated as completed. With Token Factory disabled, model explanations and repair selection are unavailable. Do not represent either as successful.
 
-Render's filesystem is ephemeral by default, so the SQLite mount and `BUGSY_DATABASE_PATH` are required if records must survive restarts and redeploys. Back up any existing local SQLite data separately before migrating it; a new hosted disk starts with an empty database.
+Render's filesystem is ephemeral by default. The `/tmp` default allows the free service to start, but it does not preserve records across restarts or redeploys. A mounted persistent disk and explicit `BUGSY_DATABASE_PATH` are required for durable SQLite storage. Back up any existing local SQLite data separately before migrating it; a new hosted disk starts with an empty database.
 
 ## Configuration reference
 
@@ -94,7 +96,7 @@ Render's filesystem is ephemeral by default, so the SQLite mount and `BUGSY_DATA
 | --- | --- | --- |
 | `VITE_API_BASE_URL` | Browser API origin, set at frontend build time | Localhost |
 | `CORS_ORIGINS` | Comma-separated allowed browser origins | Local Vite origins |
-| `BUGSY_DATABASE_PATH` | SQLite file path | `backend/data/bugsy.sqlite3` |
+| `BUGSY_DATABASE_PATH` | SQLite file path | System temporary directory (Render: `/tmp/bugsy.sqlite3`; ephemeral) |
 | `SANDBOX_ENABLED` | Enables real ConTree Sandbox operations | `false` |
 | `TOKEN_FACTORY_ENABLED` | Enables real model requests | `false` |
 | `SANDBOX_RETAIN_INSTALLATION_ARTIFACT` | Retains successful install image for later imports | `false` |

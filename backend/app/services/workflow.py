@@ -27,8 +27,13 @@ _lock = Lock()
 
 
 def _connect() -> sqlite3.Connection:
-    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    connection = sqlite3.connect(DB_PATH, timeout=15, isolation_level=None)
+    try:
+        DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+        connection = sqlite3.connect(DB_PATH, timeout=15, isolation_level=None)
+    except (OSError, sqlite3.Error):
+        raise RuntimeError(
+            "Unable to open Bugsy's workflow database. Check BUGSY_DATABASE_PATH and directory write permissions."
+        ) from None
     connection.row_factory = sqlite3.Row
     connection.execute("PRAGMA foreign_keys = ON")
     connection.execute("PRAGMA busy_timeout = 15000")

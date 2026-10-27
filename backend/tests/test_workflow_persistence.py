@@ -163,6 +163,19 @@ def test_database_schema_is_versioned(database):
         assert connection.execute("PRAGMA user_version").fetchone()[0] == 6
 
 
+def test_explicit_database_path_failure_is_reported_without_fallback(tmp_path, monkeypatch):
+    # A file used as the configured parent makes directory creation fail on all
+    # supported platforms, without relying on platform-specific permissions.
+    blocked_parent = tmp_path / "not-a-directory"
+    blocked_parent.write_text("block", encoding="utf-8")
+    monkeypatch.setattr(workflow, "DB_PATH", blocked_parent / "bugsy.sqlite3")
+
+    with pytest.raises(RuntimeError, match="BUGSY_DATABASE_PATH"):
+        workflow._connect()
+
+    assert not (tmp_path / "bugsy.sqlite3").exists()
+
+
 def test_restart_marks_lost_running_result_unknown_without_restoring_approval(database, monkeypatch):
     analysis = save_fixture()
     proposal = analysis.repair_proposal
