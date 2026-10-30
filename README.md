@@ -13,7 +13,7 @@ Bugsy checks what it understood, gathers package facts, asks a real resolver to 
 
 </div>
 
-> **Demo video:** Not published yet.<br>
+> **Demo video:** [Watch on YouTube](https://youtu.be/DIIRniCuikA?si=ejzv08ymqHwtl4eY)<br>
 > **Live app:** [Frontend](https://bugsy-l99mh8tjo-romisha-biswas-projects.vercel.app) · [Backend health](https://bugsy-8g9q.onrender.com/health)<br>
 > These deployment URLs were previously supplied for the project; their current availability has not been checked for this README.
 
@@ -99,10 +99,6 @@ flowchart LR
 
 The browser calls Bugsy’s API; provider credentials remain backend-side. PyPI supplies metadata. The resolver and verification commands run in ConTree, not on the host. The model receives a bounded evidence bundle; deterministic code validates its structured selection and creates the requirements diff. See [`backend/app/api/routes/analyses.py`](backend/app/api/routes/analyses.py), [`backend/app/services/compatibility.py`](backend/app/services/compatibility.py), [`backend/app/services/repair.py`](backend/app/services/repair.py), and [`backend/app/adapters/contree.py`](backend/app/adapters/contree.py).
 
-## Screenshots
-
-No actual application screenshots are currently checked into the repository. The `devpost/prd.html` dashboard is a design proposal, not a screenshot of the running application, so it is intentionally not presented as product evidence. Add screenshots captured from the actual UI here when available.
-
 ## Technology stack
 
 | Area | Current implementation |
@@ -185,52 +181,6 @@ The original set was reported as unsatisfiable by the real ConTree resolver. Bug
 
 The candidate resolver result passed in ConTree with Python `3.12.13` and `uv==0.12.19`. That is evidence of resolution for that proposed file and environment only. The later installation attempt ended with a transport error and no structured Sandbox result, so its persisted outcome is **unknown**. Imports were not run, and project tests were not run. The example is useful precisely because it shows the boundary between a resolver pass and unconfirmed installation; it is not a fully verified application repair.
 
-## Local setup
-
-### Prerequisites
-
-- Python 3.12
-- `uv`
-- Node.js and npm
-- Git
-
-### Backend (Windows PowerShell)
-
-From the repository root. The guarded copy leaves an existing local `.env` untouched:
-
-```powershell
-if (-not (Test-Path .env)) { Copy-Item .env.example .env }
-uv venv --python 3.12 backend/.venv
-Set-Location backend
-uv pip install --python .venv/Scripts/python.exe -e ".[dev]"
-.venv/Scripts/python.exe -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
-```
-
-The root `.env` is for local backend configuration. Add real credentials only there; keep service flags `false` unless intentionally testing a provider-backed action. Do not place secrets in variables beginning with `VITE_`.
-
-### Frontend
-
-In another terminal from the repository root:
-
-```powershell
-npm.cmd --prefix frontend ci
-npm.cmd --prefix frontend run dev
-```
-
-The local frontend uses `http://127.0.0.1:8000` by default. The backend health endpoint is `http://127.0.0.1:8000/health`; it reports API process health, not provider connectivity.
-
-### Local tests
-
-```powershell
-Set-Location backend
-.venv/Scripts/python.exe -m pytest -q
-Set-Location ..
-npm.cmd --prefix frontend test
-npm.cmd --prefix frontend run build
-```
-
-The end-to-end API test uses mocked resolver, model, installer, and importer adapters. A passing local suite does not establish that live Token Factory or ConTree operations succeed.
-
 ## Environment variables
 
 Start from [`.env.example`](.env.example). It contains names/placeholders only; never commit `.env` or put credentials in frontend build variables.
@@ -276,33 +226,6 @@ The repository records several practical integration challenges:
 
 The architecture reflects a few useful lessons: package metadata is not a resolver result; resolution is not installation; imports are not application tests; and an explicit unknown result is more useful than an unsupported success claim.
 
-## Roadmap
-
-1. Establish reliable, separately approved live ConTree resolution, installation, and import checks for selected supported targets.
-2. Confirm provider image/runtime availability per Python target and document evidence for each.
-3. Improve public-demo protections before enabling cost-bearing integrations (authentication, rate limits, and abuse controls).
-4. Consider `pyproject.toml` support, manual package entry, and optional project-code/test uploads only after the requirements-file workflow is reliable.
-5. Review SQLite durability and download-approval persistence for the intended hosting setup.
-
-Items beyond the current requirements-file workflow are future possibilities, not implemented features.
-
-## Contributing
-
-Bug reports and focused pull requests are welcome. Before opening a change:
-
-1. Explain the user-visible behavior or bug.
-2. Keep resolver and provider interactions mocked in routine tests; never require credentials or a live Sandbox for unit tests.
-3. Run backend tests, frontend tests, and the frontend production build.
-4. Do not include `.env`, API keys, local databases, Sandbox captures, or generated build output.
-5. Preserve the distinction between simulated, unknown, not-run, and real provider results.
-
 ## License
 
-No license file or license grant was found in the repository. Until one is added, do not assume permission to redistribute or reuse the code.
-
-## Acknowledgements
-
-- **Nebius Token Factory and NVIDIA Nemotron** for the model-inference integration.
-- **Nebius ConTree** for the isolated Sandbox integration.
-- **PyPI** for package metadata, and the **uv** project for dependency resolution.
-- The open-source projects used by the application: React, TypeScript, Vite, FastAPI, Pydantic, `packaging`, and pytest.
+Bugsy is released under the [MIT License](LICENSE).
