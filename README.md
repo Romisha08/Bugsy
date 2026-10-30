@@ -1,122 +1,225 @@
+<div align="center">
+
 # Bugsy
 
-Bugsy is a Python dependency compatibility and repair assistant. The current app accepts a `requirements.txt`, validates and previews its parsed entries, retrieves PyPI metadata, builds a deterministic compatibility report, and can request evidence-grounded AI explanations and repair proposals. Repair proposals require a separate resolver check before they become ready. Installation and import verification are separate approval-gated Sandbox stages. Project tests are reported as not run because project code is not uploaded.
+### Dependencies, with receipts.
 
-## Current verification limits
+**Turn a Python dependency conflict into an evidence-backed, reviewable repair workflow.**
+Bugsy checks what it understood, gathers package facts, asks a real resolver to test a candidate, and keeps every verification stage honest.
 
-- Resolution, installation, imports, and project tests have distinct statuses. An unavailable or incomplete result is never a successful verification.
-- Real ConTree operations require `SANDBOX_ENABLED=true` and configured ConTree credentials. Real AI explanations and repair selection require `TOKEN_FACTORY_ENABLED=true` and a configured API key.
-- Both service flags default to `false`; installation artifact retention also defaults to `false`.
-- Recent live ConTree file-staging attempts have failed with transport errors. Do not present the live Sandbox workflow as reliable until a separately approved run succeeds. Prior successful resolver evidence applies only to the specific proposal and environment where it was captured.
-- Retained-image installation/import flow depends on provider behavior and account access. Artifact retention cost, lifetime, and availability have not been established.
-- The API has no user authentication or application-level rate limiting. Before enabling cost-bearing integrations on a public instance, restrict access or add an abuse-control layer.
+[![Python 3.12 backend](https://img.shields.io/badge/backend-Python%203.12-3776AB?logo=python&logoColor=white)](https://www.python.org/)
+[![React + TypeScript](https://img.shields.io/badge/frontend-React%20%2B%20TypeScript-3178C6?logo=typescript&logoColor=white)](https://react.dev/)
+[![Nebius](https://img.shields.io/badge/AI%20%2B%20sandbox-Nebius-5B5BD6)](https://nebius.com/)
 
-## Local development
+</div>
 
-The root `.env` is loaded by the backend configuration and is ignored by Git. Keep credentials there locally and in the hosting provider's secret environment settings in production. Never put credentials in a `VITE_` variable; Vite embeds those values into browser assets.
+> **Demo video:** Not published yet.<br>
+> **Live app:** [Frontend](https://bugsy-l99mh8tjo-romisha-biswas-projects.vercel.app) · [Backend health](https://bugsy-8g9q.onrender.com/health)<br>
+> These deployment URLs were previously supplied for the project; their current availability has not been checked for this README.
 
-Install the backend in its project-specific environment and start it from `backend/`:
+## The problem
+
+A `requirements.txt` can look simple and still describe a set of packages that cannot coexist. A developer may spend time reading package metadata, guessing which pin to change, and retrying installations in an environment that is different from the eventual deployment.
+
+For example, one pinned package may require `shared-lib<2`, while the same file pins `shared-lib==2.4`. That example illustrates the kind of contradiction Bugsy is designed to investigate; it is not a claim about a particular real package result.
+
+## The solution
+
+Bugsy combines PyPI release metadata with deterministic compatibility reporting and dependency resolution in a Nebius ConTree Sandbox. NVIDIA Nemotron can explain the supplied evidence and select among validated repair candidates. Bugsy builds the proposed file change, shows the diff, and waits for user approval before resolver, installation, import, and download steps.
+
+Bugsy is **not** an autonomous repair agent. A model suggestion is not compatibility evidence, and a successful resolver result does not prove a package installation, import, or application test succeeded.
+
+## Key features
+
+- Upload or paste `requirements.txt` and select a Python target.
+- Read-only parse preview with line-specific errors; unsupported or malformed input blocks full analysis.
+- PyPI metadata such as `Requires-Python` and `Requires-Dist`, kept distinct from resolver evidence.
+- Deterministic compatibility findings and bounded, evidence-grounded Nemotron explanations.
+- Repair request preview, candidate validation, and a generated unified diff.
+- Separate approval-gated resolver, installation, and import operations in ConTree.
+- Persisted proposals, stage history, approval consumption, and operation identifiers in SQLite.
+- Explicit `unknown`, `incomplete`, failed, and not-run results; no silent simulated-success fallback.
+- Original requirements are preserved. Project tests remain **Not run — project code not provided**.
+
+## How Bugsy works
+
+```mermaid
+flowchart TD
+    U[Upload or paste requirements.txt] --> P[Parse and validate]
+    P -->|Invalid or unsupported line| E[Show line number and actionable error]
+    P -->|Valid| S[Save original source and read-only preview]
+    S --> A[Start analysis]
+    A --> M[Retrieve PyPI metadata]
+    A --> R[Run uv resolver in ConTree]
+    M --> D[Build deterministic compatibility report]
+    R --> D
+    D --> X[Optional Nemotron explanation]
+    D --> C[Prepare evidence-bounded repair candidates]
+    C -->|User approves model request| N[Nemotron selects supplied candidate IDs]
+    N --> V[Bugsy validates selection and builds diff]
+    V -->|Proposal: awaiting resolution| Q[User reviews exact requirements and diff]
+    Q -->|Separate approval| RR[Resolve complete proposal in ConTree]
+    RR -->|Real success and matching runtime| READY[Proposal ready; still not fully verified]
+    READY -->|Separate approval| I[Install in ConTree]
+    I -->|Validated retained image available| IM[Separate allowlisted import check]
+    READY --> DL[Approve exact diff and download]
+    IM --> DL
+    READY -.-> PT[Project tests: not run; project code not provided]
+```
+
+### System architecture
+
+```mermaid
+flowchart LR
+    subgraph Browser[React + TypeScript + Vite]
+      UI[Requirements input, report, diff, stage approvals]
+    end
+    subgraph API[FastAPI backend]
+      PR[Parser and validation]
+      WF[Workflow orchestration + SQLite]
+      COMP[Deterministic compatibility report]
+      REP[Repair candidate validation + diff builder]
+      GUARD[Approval, hash, runtime, and status guards]
+    end
+    PYPI[PyPI JSON API]
+    TF[Nebius Token Factory\nNemotron]
+    CT[Nebius ConTree Sandbox\nfixed uv operations]
+    UI --> PR --> WF
+    WF --> COMP
+    COMP --> PYPI
+    COMP --> CT
+    COMP --> TF
+    COMP --> REP
+    REP --> TF
+    REP --> GUARD
+    GUARD --> CT
+    CT --> WF
+    WF --> UI
+```
+
+The browser calls Bugsy’s API; provider credentials remain backend-side. PyPI supplies metadata. The resolver and verification commands run in ConTree, not on the host. The model receives a bounded evidence bundle; deterministic code validates its structured selection and creates the requirements diff. See [`backend/app/api/routes/analyses.py`](backend/app/api/routes/analyses.py), [`backend/app/services/compatibility.py`](backend/app/services/compatibility.py), [`backend/app/services/repair.py`](backend/app/services/repair.py), and [`backend/app/adapters/contree.py`](backend/app/adapters/contree.py).
+
+## Screenshots
+
+No actual application screenshots are currently checked into the repository. The `devpost/prd.html` dashboard is a design proposal, not a screenshot of the running application, so it is intentionally not presented as product evidence. Add screenshots captured from the actual UI here when available.
+
+## Technology stack
+
+| Area | Current implementation |
+| --- | --- |
+| Frontend | React 19, TypeScript, Vite 6 |
+| API | Python 3.12, FastAPI, Pydantic |
+| Requirement parsing | `packaging` requirement parser; supported `requirements.txt` syntax only |
+| Package facts | PyPI JSON API via `httpx` |
+| Resolver | `uv==0.12.19` in the ConTree Sandbox |
+| Production Sandbox adapter | `contree-client[httpx]==0.4.1` |
+| AI client | OpenAI-compatible Python client for Nebius Token Factory |
+| Model default | `nvidia/nemotron-3-super-120b-a12b`, configurable with `NEBIUS_MODEL_ID` |
+| Persistence | SQLite at `BUGSY_DATABASE_PATH`, or a system temporary-directory default |
+| Tests | pytest, FastAPI TestClient, Vitest, React Testing Library |
+| Hosting direction | Vercel frontend + Render backend; optional, not part of the verification evidence |
+
+`backend/pyproject.toml` currently declares both `contree-client[httpx]==0.4.1` and `contree-sdk==0.3.6`. The production adapter uses the client API; the root `test_sandbox.py` is the separate legacy-SDK smoke script.
+
+## AI and agentic architecture
+
+Bugsy uses **NVIDIA Nemotron through Nebius Token Factory** for two bounded assistive tasks: explaining an existing report and selecting among supplied repair candidate IDs. It does not ask the model to invent package versions, rewrite requirement lines, create shell commands, or decide whether compatibility is proven.
+
+The backend supplies candidate release metadata and deterministic findings, validates the model’s structured response against those supplied candidates and supported finding codes, then constructs the proposed requirements text and diff itself. The candidate becomes ready only after a separate real resolver success with a matching Sandbox Python runtime. The deterministic report remains the source of truth; the model’s explanation is optional and can be unavailable without turning an incomplete analysis into a success.
+
+## Nebius integrations
+
+### Token Factory
+
+- OpenAI-compatible API, called from the backend with the configured Nemotron model.
+- Used for evidence-grounded report explanations and constrained repair candidate selection.
+- `TOKEN_FACTORY_ENABLED` defaults to `false`; `NEBIUS_API_KEY` is never a browser variable.
+- The model call requires explicit approval of the sanitized repair-request preview. The response is validated; it does not directly execute code.
+- The specification records a historical successful short completion, but the README’s current deployment status says a successful current request is not confirmed. Treat service availability as unverified until a current controlled request succeeds.
+
+### ConTree Sandbox
+
+The production adapter uses `contree-client==0.4.1` with separately submitted and tracked operations, byte-backed file staging, bounded outputs, and explicit retry configuration. It does not guarantee exactly-once execution: an ambiguous submission or tracking result remains unknown and is not automatically resubmitted.
+
+Configure the ConTree base URL as `https://api.tokenfactory.nebius.com/sandboxes`; the SDK manages its `/v1` API paths. The backend uses `NEBIUS_API_KEY` as the bearer credential and sends the separately configured `CONTREE_PROJECT_ID` as the project header. `NEBIUS_API_KEY` is a backend secret, not a browser setting.
+
+Configured targets map as follows, but provider image availability and actual runtime are not confirmed for every target:
+
+| Requested Python | Configured image |
+| --- | --- |
+| 3.10 | `python:3.10-slim` |
+| 3.11 | `python:3.11-slim` |
+| 3.12 | `python:3.12-slim` |
+| 3.13 | `python:3.13-slim` |
+| 3.14 | `python:3.14-slim` |
+
+The adapter checks the actual Sandbox `sys.version` before resolver setup and refuses to report a successful resolution if the runtime is missing, malformed, or does not match the requested target. The application maps the SDK’s resolver output into a result; it does not claim that a downloaded Python distribution means the Sandbox itself runs that version.
+
+### Verification stages and what they prove
+
+| Stage | What it checks | What a pass does not prove |
+| --- | --- | --- |
+| Dependency resolution | Whether the complete requirements set can be resolved by the pinned `uv` resolver in the reported Sandbox environment. | That submitted packages were installed, imports work, or the user’s application works. |
+| Installation | Whether the Sandbox installation operation completed for the proposed requirements. Installation may itself resolve dependencies as part of installing. | That the application imports or its tests pass. |
+| Import checks | Fixed, allowlisted imports for direct packages with a reliable distribution-to-module mapping, against a confirmed retained installation image. | That application behavior or project tests pass. |
+| Project tests | Not run — project code not provided. | No project-specific test claim is made. |
+
+Installation and import checks are separate approval-gated stages. Import checks require a successful installation with a validated retained image; retention is disabled by default and its cost, lifetime, and availability depend on the provider/account and are not established here.
+
+## Real example: conflict, proposed diff, and actual result
+
+A recorded Bugsy workflow used this original input for Python 3.12:
+
+```text
+requests==2.25.0
+urllib3==2.2.0
+```
+
+The original set was reported as unsatisfiable by the real ConTree resolver. Bugsy then produced and separately checked this candidate proposal:
+
+```diff
+-requests==2.25.0
++requests==2.34.2
+ urllib3==2.2.0
+```
+
+The candidate resolver result passed in ConTree with Python `3.12.13` and `uv==0.12.19`. That is evidence of resolution for that proposed file and environment only. The later installation attempt ended with a transport error and no structured Sandbox result, so its persisted outcome is **unknown**. Imports were not run, and project tests were not run. The example is useful precisely because it shows the boundary between a resolver pass and unconfirmed installation; it is not a fully verified application repair.
+
+## Local setup
+
+### Prerequisites
+
+- Python 3.12
+- `uv`
+- Node.js and npm
+- Git
+
+### Backend (Windows PowerShell)
+
+From the repository root. The guarded copy leaves an existing local `.env` untouched:
 
 ```powershell
+if (-not (Test-Path .env)) { Copy-Item .env.example .env }
 uv venv --python 3.12 backend/.venv
 Set-Location backend
 uv pip install --python .venv/Scripts/python.exe -e ".[dev]"
 .venv/Scripts/python.exe -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 ```
 
-In another terminal, install frontend dependencies and start Vite:
+The root `.env` is for local backend configuration. Add real credentials only there; keep service flags `false` unless intentionally testing a provider-backed action. Do not place secrets in variables beginning with `VITE_`.
+
+### Frontend
+
+In another terminal from the repository root:
 
 ```powershell
 npm.cmd --prefix frontend ci
 npm.cmd --prefix frontend run dev
 ```
 
-The local API health route is `http://127.0.0.1:8000/health`. It reports process health only; it does not check PyPI, Token Factory, or ConTree.
+The local frontend uses `http://127.0.0.1:8000` by default. The backend health endpoint is `http://127.0.0.1:8000/health`; it reports API process health, not provider connectivity.
 
-## Simplest hosting path: Render
-
-Use one Render Web Service for FastAPI and one Render Static Site for Vite. This matches the existing two-process architecture and requires no application proxy or deployment manifest.
-
-### 1. Deploy the backend Web Service
-
-Create a Web Service from the repository with:
-
-| Setting | Value |
-| --- | --- |
-| Root Directory | `backend` |
-| Runtime | Python |
-| Python version | `3.12.13` via `PYTHON_VERSION` |
-| Build Command | `pip install .` |
-| Start Command | `uvicorn app.main:app --host 0.0.0.0 --port $PORT` |
-| Health Check Path | `/health` |
-
-Add these non-secret environment settings in the backend service:
-
-```text
-CORS_ORIGINS=https://<your-static-site>.onrender.com
-# Optional: omit BUGSY_DATABASE_PATH on Render Free to use /tmp/bugsy.sqlite3.
-# For a paid service with a persistent disk mounted at /var/data, set:
-# BUGSY_DATABASE_PATH=/var/data/bugsy.sqlite3
-SANDBOX_ENABLED=false
-TOKEN_FACTORY_ENABLED=false
-SANDBOX_RETAIN_INSTALLATION_ARTIFACT=false
-```
-
-On Render Free, leave `BUGSY_DATABASE_PATH` unset. Bugsy stores SQLite at `/tmp/bugsy.sqlite3`, which is writable but ephemeral: records can be lost when the instance restarts or redeploys. For durable data, attach a persistent disk to an eligible paid backend service, mount it at `/var/data`, and set `BUGSY_DATABASE_PATH=/var/data/bugsy.sqlite3`. SQLite on a Render disk is a single-instance setup, can cause downtime during deploys, and cannot be shared across multiple service instances. Do not scale this backend horizontally while it uses SQLite on a disk.
-
-Only if you separately choose to enable a real integration, add the required backend-only credentials/settings in Render's Environment page: `NEBIUS_API_KEY`, `CONTREE_BASE_URL`, and `CONTREE_PROJECT_ID` for ConTree; `NEBIUS_BASE_URL` and `NEBIUS_MODEL_ID` are optional Token Factory overrides. Keep the two feature flags off until you are ready for those external calls and their possible usage costs. Configure secret values in Render's dashboard, never in source files or frontend variables.
-
-### 2. Deploy the frontend Static Site
-
-Create a Static Site from the same repository:
-
-| Setting | Value |
-| --- | --- |
-| Root Directory | `frontend` |
-| Build Command | `npm ci && npm run build` |
-| Publish Directory | `dist` |
-| Build Environment Variable | `VITE_API_BASE_URL=https://<your-backend>.onrender.com` |
-
-`VITE_API_BASE_URL` is compiled into the frontend at build time. If the backend URL changes, update this value and rebuild the static site. After Render assigns the frontend URL, set the exact origin in the backend's `CORS_ORIGINS` and redeploy the backend.
-
-### 3. Configure and review
-
-1. Create the backend service first and record its public HTTPS URL.
-2. Create the frontend static site with that URL as `VITE_API_BASE_URL`.
-3. Set `CORS_ORIGINS` to the frontend's exact HTTPS origin.
-4. Confirm `/health` returns HTTP 200.
-5. Keep Sandbox, Token Factory, and artifact retention disabled until credentials, access, costs, and a controlled live integration result have been reviewed.
-6. Test the local/public UI only against workflows whose dependencies are enabled. With Sandbox disabled, compatibility resolution and repair resolution cannot be demonstrated as completed. With Token Factory disabled, model explanations and repair selection are unavailable. Do not represent either as successful.
-
-Render's filesystem is ephemeral by default. The `/tmp` default allows the free service to start, but it does not preserve records across restarts or redeploys. A mounted persistent disk and explicit `BUGSY_DATABASE_PATH` are required for durable SQLite storage. Back up any existing local SQLite data separately before migrating it; a new hosted disk starts with an empty database.
-
-## Configuration reference
-
-| Variable | Purpose | Safe default |
-| --- | --- | --- |
-| `VITE_API_BASE_URL` | Browser API origin, set at frontend build time | Localhost |
-| `CORS_ORIGINS` | Comma-separated allowed browser origins | Local Vite origins |
-| `BUGSY_DATABASE_PATH` | SQLite file path | System temporary directory (Render: `/tmp/bugsy.sqlite3`; ephemeral) |
-| `SANDBOX_ENABLED` | Enables real ConTree Sandbox operations | `false` |
-| `TOKEN_FACTORY_ENABLED` | Enables real model requests | `false` |
-| `SANDBOX_RETAIN_INSTALLATION_ARTIFACT` | Retains successful install image for later imports | `false` |
-| `CONTREE_BASE_URL` | ConTree API base URL | Unconfigured |
-| `CONTREE_PROJECT_ID` | ConTree `Project` header value | Unconfigured |
-| `NEBIUS_API_KEY` | Backend credential for Nebius integrations | Unconfigured |
-| `NEBIUS_BASE_URL` | Optional Token Factory API base override | Official default in backend settings |
-| `NEBIUS_MODEL_ID` | Optional Token Factory model override | Backend default |
-
-## Demo workflow status
-
-- **Local UI and API:** implemented; local mocked tests and frontend build have been used during development. Confirm the current checkout with local checks before submission.
-- **Requirements parsing and read-only preview:** implemented locally.
-- **PyPI metadata and deterministic compatibility report:** implemented, but live metadata access depends on outbound network access and can return incomplete results.
-- **Real ConTree resolution:** implemented but currently unverified as a reliable hosted workflow; recent live file-staging attempts failed with transport errors. No successful run should be inferred from the code path.
-- **Token Factory explanation and repair candidate selection:** implemented, but availability depends on the feature flag, credential, and provider access. A successful current deployment request has not been confirmed here.
-- **Package installation and import smoke checks:** implemented as separate Sandbox stages, but current live success and retained-image availability are unverified.
-- **Project-specific tests:** not run — project code not provided.
-
-## Local validation commands
+### Local tests
 
 ```powershell
 Set-Location backend
@@ -126,6 +229,80 @@ npm.cmd --prefix frontend test
 npm.cmd --prefix frontend run build
 ```
 
-## Separate ConTree smoke test
+The end-to-end API test uses mocked resolver, model, installer, and importer adapters. A passing local suite does not establish that live Token Factory or ConTree operations succeed.
 
-`test_sandbox.py` is a separate root-level smoke script using the legacy SDK. It is not the production adapter. It runs only a harmless fixed Python command and requires explicit `SANDBOX_ENABLED=true`; a smoke-test pass does not verify dependency compatibility. Review account usage terms and approve a specific remote operation before enabling or running it.
+## Environment variables
+
+Start from [`.env.example`](.env.example). It contains names/placeholders only; never commit `.env` or put credentials in frontend build variables.
+
+| Variable | Purpose | Default / guidance |
+| --- | --- | --- |
+| `SANDBOX_ENABLED` | Enables real ConTree operations | `false` |
+| `TOKEN_FACTORY_ENABLED` | Enables real Token Factory requests | `false` |
+| `SANDBOX_RETAIN_INSTALLATION_ARTIFACT` | Retains a successful install image for a later import-only stage | `false`; retention cost/lifetime/availability are unknown |
+| `NEBIUS_API_KEY` | Backend-side Nebius credential | Required for provider calls; do not expose |
+| `CONTREE_BASE_URL` | ConTree Sandbox API base URL | Configure in backend environment |
+| `CONTREE_PROJECT_ID` | ConTree `Project` header value | Configure separately from the credential |
+| `NEBIUS_BASE_URL` | Optional Token Factory API base override | Backend default applies when unset |
+| `NEBIUS_MODEL_ID` | Optional Token Factory model override | `nvidia/nemotron-3-super-120b-a12b` |
+| `BUGSY_DATABASE_PATH` | SQLite file location | System temporary directory by default; ephemeral on Render Free |
+| `CORS_ORIGINS` | Comma-separated allowed browser origins | Local Vite origins by default |
+| `VITE_API_BASE_URL` | Browser API base URL, embedded at frontend build time | `http://127.0.0.1:8000`; not a secret |
+
+There is no target-selecting `SANDBOX_IMAGE` override: the image comes from the application-controlled Python target mapping. Request and response limits are application settings, not additional environment variables in `.env.example`.
+
+## Current limitations and unsupported input
+
+- Only uploaded or pasted `requirements.txt` is supported. `pyproject.toml`, lockfiles, local paths, VCS dependencies, editable installs, manual package entry, and other languages are outside the MVP.
+- OS-specific markers are evaluated only to the extent supported by the actual resolver environment. Bugsy does not promise cross-platform compatibility.
+- Project source and test files are not uploaded. Project tests always remain not run.
+- Provider/runtime availability for all five configured Python image tags is unverified.
+- Recent live production ConTree file-staging attempts failed with transport errors; the hosted live workflow should not be described as reliable without a new successful, approved run.
+- The Token Factory integration is implemented, but current deployment availability is unconfirmed.
+- The API currently has no user authentication or application-level rate limiting. Publicly enabling cost-bearing integrations creates abuse and cost risk.
+- SQLite defaults to a system temporary directory. On Render Free this is `/tmp/bugsy.sqlite3`, which is writable but ephemeral across restarts/redeploys. A configured mounted persistent disk is needed for durable hosted records; SQLite is a single-instance arrangement.
+- The frontend holds the active analysis view in memory; refreshing the page can lose that view even though backend workflow records are persisted.
+- The download approval cache is process-local, so a backend restart may require the user to approve the displayed diff again.
+- No screenshots are checked into the repository yet; capture them from the actual application before using them in a submission.
+
+## Challenges and lessons
+
+The repository records several practical integration challenges:
+
+- **Uncertain Sandbox transport:** live file staging has failed with transport errors. Bugsy keeps ambiguous outcomes unknown and consumes one-shot approvals rather than automatically resubmitting a potentially non-idempotent operation.
+- **Runtime is evidence, not an image label:** a requested Python target or a downloaded interpreter is not enough. Bugsy checks the Sandbox’s actual runtime and blocks a successful resolution claim on mismatch.
+- **AI output needs limits and validation:** the spec records a short Nemotron request whose output budget was exhausted before final text. Bugsy validates structured output and rejects missing/incomplete responses rather than equating HTTP success with a usable diagnosis.
+- **Deployment storage tradeoffs:** Render Free needs writable temporary SQLite storage, but that storage is ephemeral. Durable SQLite requires an eligible persistent disk and a single backend instance.
+
+The architecture reflects a few useful lessons: package metadata is not a resolver result; resolution is not installation; imports are not application tests; and an explicit unknown result is more useful than an unsupported success claim.
+
+## Roadmap
+
+1. Establish reliable, separately approved live ConTree resolution, installation, and import checks for selected supported targets.
+2. Confirm provider image/runtime availability per Python target and document evidence for each.
+3. Improve public-demo protections before enabling cost-bearing integrations (authentication, rate limits, and abuse controls).
+4. Consider `pyproject.toml` support, manual package entry, and optional project-code/test uploads only after the requirements-file workflow is reliable.
+5. Review SQLite durability and download-approval persistence for the intended hosting setup.
+
+Items beyond the current requirements-file workflow are future possibilities, not implemented features.
+
+## Contributing
+
+Bug reports and focused pull requests are welcome. Before opening a change:
+
+1. Explain the user-visible behavior or bug.
+2. Keep resolver and provider interactions mocked in routine tests; never require credentials or a live Sandbox for unit tests.
+3. Run backend tests, frontend tests, and the frontend production build.
+4. Do not include `.env`, API keys, local databases, Sandbox captures, or generated build output.
+5. Preserve the distinction between simulated, unknown, not-run, and real provider results.
+
+## License
+
+No license file or license grant was found in the repository. Until one is added, do not assume permission to redistribute or reuse the code.
+
+## Acknowledgements
+
+- **Nebius Token Factory and NVIDIA Nemotron** for the model-inference integration.
+- **Nebius ConTree** for the isolated Sandbox integration.
+- **PyPI** for package metadata, and the **uv** project for dependency resolution.
+- The open-source projects used by the application: React, TypeScript, Vite, FastAPI, Pydantic, `packaging`, and pytest.
