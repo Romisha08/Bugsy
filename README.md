@@ -2,7 +2,6 @@
 
 # Bugsy
 
-### Dependencies, with receipts.
 
 **Turn a Python dependency conflict into an evidence-backed, reviewable repair workflow.**
 Bugsy checks what it understood, gathers package facts, asks a real resolver to test a candidate, and keeps every verification stage honest.
